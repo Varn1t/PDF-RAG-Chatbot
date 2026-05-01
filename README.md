@@ -123,6 +123,6 @@ pdf-rag-model/
 
 <div align="center">
 
-Made with ❤️ using LangChain, FAISS, Ollama, and Streamlit
+Made by Varn1t using LangChain, FAISS, Ollama, and Streamlit
 
 </div>
