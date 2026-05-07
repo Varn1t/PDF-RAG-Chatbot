@@ -13,6 +13,7 @@
 </div>
 
 ---
+<img width="1253" height="606" alt="image" src="https://github.com/user-attachments/assets/d0f78737-6492-4f34-8f08-b15b902681d4" />
 
 ## 🧠 What is RAG?
 
