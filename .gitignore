@@ -31,3 +31,6 @@ Thumbs.db
 # Temp files
 *.tmp
 *.log
+
+# Local files
+rag_index/
