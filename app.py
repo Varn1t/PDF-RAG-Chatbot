@@ -1,14 +1,10 @@
 import streamlit as st
 import tempfile
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import OllamaLLM
-from langchain_classic.chains import RetrievalQA
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-from youtube_transcript_api import YouTubeTranscriptApi, FetchedTranscript
+from youtube_transcript_api import YouTubeTranscriptApi
 import os
+import agent
 
 # 1. Page Configuration (Wide Layout for premium SaaS appearance)
 st.set_page_config(
@@ -98,13 +94,7 @@ st.markdown("""
 
 # 3. Helpers & Core RAG Pipeline functions
 def build_qa_chain(docs, chunk_size, chunk_overlap, k, model_name):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    chunks = splitter.split_documents(docs)
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectorstore = FAISS.from_documents(chunks, embeddings)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": k})
-    llm = OllamaLLM(model=model_name)
-    return RetrievalQA.from_chain_type(llm=llm, retriever=retriever), len(chunks)
+    return agent.build_pipeline(docs, chunk_size, chunk_overlap, k, model_name)
 
 def process_pdf(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
@@ -128,6 +118,47 @@ def load_youtube(url):
     transcript = ytt.fetch(video_id)
     full_text = " ".join([t.text for t in transcript])
     return [Document(page_content=full_text, metadata={"source": url})]
+
+def render_telemetry(run_history, msg_idx=0):
+    if not run_history:
+        return
+        
+    with st.expander("🕵️ Agentic Self-Corrective Telemetry", expanded=False):
+        for entry in run_history:
+            iter_num = entry["iteration"]
+            q = entry["query"]
+            ans = entry["answer"]
+            verdict = entry["verdict"]
+            is_grounded = entry["is_grounded"]
+            is_relevant = entry.get("is_relevant", True)
+            
+            if is_grounded and is_relevant:
+                status_emoji = "🟢 Grounded & Relevant"
+                text_color = "#10b981"
+            elif is_grounded:
+                status_emoji = "⚠️ Grounded but Irrelevant (Retrying...)"
+                text_color = "#f59e0b"
+            else:
+                status_emoji = "⚠️ Hallucinated / Not Grounded (Retrying...)"
+                text_color = "#ef4444"
+                
+            st.markdown(f"### 🔄 Attempt {iter_num}")
+            st.markdown(f"**Targeted Query:** `{q}`")
+            st.markdown(f"**Verification Verdict:** <span style='color:{text_color}; font-weight:bold;'>{status_emoji}</span>", unsafe_allow_html=True)
+            
+            # Simple border container
+            st.markdown(
+                f'<div style="border: 1px solid rgba(255,255,255,0.08); padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.02); margin-bottom: 15px;">'
+                f'<strong>Draft Generated Answer:</strong><br>{ans}'
+                f'</div>', 
+                unsafe_allow_html=True
+            )
+            
+            st.markdown("**Retrieved Context Chunks Used:**")
+            for i, chunk in enumerate(entry["chunks"]):
+                st.text_area(f"Chunk {i+1}", value=chunk, height=100, disabled=True, key=f"chunk_{msg_idx}_{iter_num}_{i}_{len(chunk)}")
+            
+            st.markdown("---")
 
 # Initialize session state variables
 if "messages" not in st.session_state:
@@ -185,6 +216,15 @@ with st.sidebar:
         "Ollama Model", 
         value="llama3", 
         help="The local model name deployed on your running Ollama server."
+    )
+    max_iterations = st.slider(
+        "Max Iterations (N)",
+        min_value=1,
+        max_value=5,
+        value=3,
+        step=1,
+        help="Maximum query-rewrite and re-generation attempts before giving up.",
+        key="max_iterations"
     )
     
     st.markdown("---")
@@ -316,9 +356,11 @@ if st.session_state.get("current_source") and "qa_chain" in st.session_state:
     """, unsafe_allow_html=True)
     
     # Render active dialog history
-    for msg in st.session_state.messages:
+    for msg_idx, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+            if "history" in msg:
+                render_telemetry(msg["history"], msg_idx)
             
     # Process user text message input query
     if query := st.chat_input(f"Ask a question about {source_name}..."):
@@ -327,13 +369,29 @@ if st.session_state.get("current_source") and "qa_chain" in st.session_state:
             st.markdown(query)
             
         with st.chat_message("assistant"):
+            status_container = st.container()
             ans_placeholder = st.empty()
-            with st.spinner("💭 Thinking..."):
+            with st.spinner("💭 Running Self-Corrective Agent..."):
                 try:
-                    response = st.session_state.qa_chain.invoke({"query": query})
-                    answer = response["result"]
+                    # Get the last 3 turns of conversation history (last 6 messages)
+                    # excluding the current user message which was just appended
+                    history = st.session_state.messages[:-1][-6:] if len(st.session_state.messages) > 1 else []
+                    
+                    result = agent.run_query(
+                        st.session_state.qa_chain, 
+                        query, 
+                        max_iterations=st.session_state.get("max_iterations", 3),
+                        chat_history=history
+                    )
+                    answer = result["final_answer"]
                     ans_placeholder.markdown(answer)
-                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": answer,
+                        "history": result["run_history"]
+                    })
+                    with status_container:
+                        render_telemetry(result["run_history"], len(st.session_state.messages) - 1)
                 except Exception as e:
                     st.error(f"Error querying model: {e}")
                     

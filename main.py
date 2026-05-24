@@ -1,12 +1,8 @@
 import os
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain_ollama import OllamaLLM
-from langchain_classic.chains import RetrievalQA
 from langchain_core.documents import Document
 from youtube_transcript_api import YouTubeTranscriptApi
+import agent
 
 def load_youtube(url):
     if "v=" in url:
@@ -59,44 +55,19 @@ def main():
 
     print(f"Loaded {len(pages)} documents/pages")
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000, 
-        chunk_overlap=50
+    print("\nBuilding agent pipeline... (may take a minute)")
+    rag_app, num_chunks = agent.build_pipeline(
+        docs=pages,
+        chunk_size=1000,
+        chunk_overlap=50,
+        k=3,
+        model_name="llama3"
     )
-
-    chunks = splitter.split_documents(pages)
-    print(f"Created {len(chunks)} chunks")
-    print("\nSample Chunk: ")
-    print(chunks[0].page_content[:200] + "...")
-
-    # Load embedding model
-    embeddings = HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2"
-    )
-
-    # embed all chunks and store in FAISS
-    print("\nBuilding vector store... (may take a minute)")
-    vectorstore = FAISS.from_documents(chunks, embeddings)
-
-    vectorstore.save_local("rag_index")
-    print("Done! Vector store saved to 'rag_index'")
-
-    # Load the saved vector store
-    vectorstore = FAISS.load_local("rag_index", embeddings, allow_dangerous_deserialization=True)
-    # Convert to retriever (fetches top 3 relevant chunks)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-
-    # Hook up llama3
-    llm = OllamaLLM(model="llama3")
-    
-    # Build the QA chain
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm, 
-        retriever=retriever, 
-    )
+    print(f"Created and indexed {num_chunks} chunks.")
 
     # Ask a question
     print("\nRAG is ready! Ask anything about the document. Type 'exit' to quit \n")
+    chat_history = []
     while True: 
         query = input("You: ").strip()
         if not query:
@@ -105,8 +76,31 @@ def main():
             print("Thanks for using the RAG model!")
             break
         else:
-            response = qa_chain.invoke({"query": query})
-            print(f"\nBot:   {response['result']}\n")
+            print("\nBot is thinking (Self-Correcting loop running)...")
+            try:
+                result = agent.run_query(
+                    rag_app, 
+                    query, 
+                    max_iterations=3,
+                    chat_history=chat_history[-6:]
+                )
+                
+                # Print diagnostic logs of iterations to console
+                print("\n================== AGENT DIAGNOSTICS ==================")
+                for entry in result["run_history"]:
+                    iter_num = entry["iteration"]
+                    q = entry["query"]
+                    verdict = entry["verdict"]
+                    print(f"Attempt #{iter_num} | Query formulated: '{q}' | Verdict: {verdict}")
+                print("=======================================================")
+                
+                print(f"\nBot:   {result['final_answer']}\n")
+                
+                # Append current conversation turn to history
+                chat_history.append({"role": "user", "content": query})
+                chat_history.append({"role": "assistant", "content": result["final_answer"]})
+            except Exception as e:
+                print(f"\nError querying agent: {e}\n")
 
 if __name__ == "__main__":
     main()

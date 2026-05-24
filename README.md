@@ -1,12 +1,13 @@
 <div align="center">
 
-# 📚 Premium RAG Chatbot Suite
+# 📚 RAG Chatbot Suite
 
-**Chat with any PDF or YouTube video — 100% locally, with a high-fidelity glassmorphic SaaS interface and zero API costs.**
+**Chat with any PDF or YouTube video — 100% locally, with a self-correcting agentic loop, dual-graded answer verification, conversational memory, and zero API costs.**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Agent-6366f1?style=for-the-badge)](https://github.com/langchain-ai/langgraph)
 [![Ollama](https://img.shields.io/badge/Ollama-llama3-black?style=for-the-badge)](https://ollama.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
@@ -14,44 +15,69 @@
 
 ---
 
-## 🧠 What is RAG?
+## 🧠 What is this?
 
-Large Language Models (LLMs) are powerful, but they don't know the contents of *your* documents. **Retrieval-Augmented Generation (RAG)** solves this by combining a vector search engine with an LLM:
+Most RAG demos stop at "retrieve chunks → generate answer." This project goes further — it uses a **LangGraph state-machine agent** that grades its own answers across two independent dimensions, detects failures, and automatically rewrites queries with targeted awareness of *what went wrong* before re-retrieving.
 
-```
-Your PDF / YouTube Video
-   │
-   ▼
-[Chunking]  →  Split into smaller, overlapping pieces
-   │
-   ▼
-[Embedding]  →  Convert each chunk into a vector (numerical meaning)
-   │
-   ▼
-[FAISS Index]  →  Store vectors for fast similarity search
-   │
-   ▼
-[Your Question]  →  Find the most relevant chunks
-   │
-   ▼
-[LLM + Context]  →  Generate a grounded, accurate answer ✅
-```
+The agent catches two distinct failure modes that most RAG systems miss:
+- **Hallucination** — the answer contains claims not supported by the retrieved chunks
+- **Retrieval mismatch** — the chunks were retrieved but didn't match the intent of the query (e.g. asked for *examples*, got *limitations*)
+
+On top of that, it has **conversational memory** — follow-up questions like *"give examples for it"* are automatically rephrased into standalone queries before retrieval, so context is never lost between turns.
+
+Everything runs locally via Ollama and FAISS. No API keys. No data leaving your machine.
 
 ---
 
-## ✨ Features & Visual Upgrades
+## ✨ Features
 
 | Feature | Description |
 |---|---|
-| 🎨 **Premium SaaS UI/UX** | Dark-mode glassmorphic styling, custom gradient branding, and elegant `Plus Jakarta Sans` typography. |
-| 🎛️ **Interactive Sidebar Control** | Complete control panel in the sidebar, separating data ingestion and configurations from the clean main chat view. |
-| 📊 **Active Source Telemetry** | Glassmorphic telemetry panel detailing parsed chunk counts, character count metrics, active embeddings, and model status. |
-| ⚙️ **Real-time Param Tuning** | Live sliders for adjusting **Chunk Size**, **Overlap**, and **Top K Retrieved Chunks** for advanced model optimization. |
-| 🔄 **Smart Index Re-builder** | Notifies you when parameter settings differ from the active vector index, allowing on-demand rebuilds to avoid system lag. |
-| 📄 **PDF Upload** | Drag and drop any PDF directly into the secure local ingestion area. |
-| 🎥 **YouTube Support** | Paste any YouTube video URL to automatically parse video transcripts and query their contexts. |
-| 🔒 **100% Fully Local** | Runs entirely on your local machine via Ollama and FAISS CPU. Zero API costs, zero tracking, total privacy. |
-| 🖥️ **CLI Mode** | Toggle interactive terminal conversations using the standalone `main.py` client. |
+| 🔁 **Self-Correcting Agent** | LangGraph loop retries with a rewritten query up to N iterations before giving up gracefully |
+| 🎯 **Dual-Graded Verification** | Every answer is graded on both **groundedness** (hallucination check) AND **relevance** (did it actually answer the question?) — both must pass |
+| 🔍 **Context-Aware Query Rewriter** | On failure, the rewriter receives the specific failure reason (hallucinated / off-topic / both) and rewrites accordingly |
+| 💬 **Conversational Memory** | Resolves pronoun references and follow-up questions using the last N chat turns before retrieval |
+| 🕵️ **Agentic Telemetry** | Expandable per-response panel showing every iteration's query, generated answer, retrieved chunks, and dual verdict |
+| ⚙️ **Live Parameter Control** | Sidebar sliders for chunk size, overlap, top-K retrieval, max correction iterations, and memory window |
+| 🔄 **Smart Re-indexer** | Detects when sidebar parameters differ from the active vector index and prompts a targeted rebuild |
+| 📄 **PDF Support** | Drag-and-drop local PDF ingestion via PyPDF |
+| 🎥 **YouTube Support** | Paste any YouTube URL to auto-fetch and query its transcript |
+| 🔒 **Fully Local** | Ollama + FAISS CPU — zero API costs, zero tracking, total privacy |
+| 🖥️ **CLI Mode** | Full terminal interface via `main.py` with diagnostic iteration logs |
+
+---
+
+## 🏗️ How the Agent Works
+
+```
+User Question
+     │
+     ▼
+[contextualize_query]  →  Rephrase follow-ups using chat history (e.g. "it" → "Expert Systems")
+     │
+     ▼
+[retrieve]  →  Pull top-K chunks from FAISS vector index
+     │
+     ▼
+[generate]  →  LLM answers using ONLY the retrieved context
+     │
+     ▼
+[check_hallucination]  →  Dual grader: GROUNDED (yes/no) + RELEVANT (yes/no)
+     │
+     ├── GROUNDED + RELEVANT ────────────────▶ Return answer ✅
+     │
+     ├── either fails + iterations < N ──────▶ [rewrite_query] → back to [retrieve] 🔄
+     │                                              ↑
+     │                                    rewriter receives specific
+     │                                    failure reason (hallucinated /
+     │                                    off-topic / both)
+     │
+     └── either fails + iterations == N ────▶ "Information not found in document" ❌
+```
+
+**Two distinct query rewriting steps exist for two different reasons:**
+- **`contextualize_query`** — runs once at the start of each turn to resolve ambiguous references using chat history. Never re-runs during the correction loop.
+- **`rewrite_query`** — runs inside the correction loop when dual grading fails. Receives a specific failure reason so the rewrite is targeted, not generic.
 
 ---
 
@@ -59,12 +85,13 @@ Your PDF / YouTube Video
 
 | Component | Tool |
 |---|---|
-| 🤖 **LLM** | `llama3` (or customizable choices) via [Ollama](https://ollama.com) |
-| 🔢 **Embeddings** | `all-MiniLM-L6-v2` (HuggingFace Sentence Transformers) |
-| 🗄️ **Vector Store** | FAISS (CPU-based local vector store) |
-| 📑 **PDF Parsing** | LangChain + PyPDF |
+| 🧠 **Agent Framework** | LangGraph (state-machine with conditional edges and retry loop) |
+| 🤖 **LLM** | `llama3` / `mistral` / `gemma` / `phi3` via Ollama |
+| 🔢 **Embeddings** | `all-MiniLM-L6-v2` — HuggingFace Sentence Transformers |
+| 🗄️ **Vector Store** | FAISS (CPU-based, no server required) |
+| 📑 **PDF Parsing** | LangChain + PyPDFLoader |
 | 🎥 **YouTube Transcripts** | `youtube-transcript-api` |
-| 🖥️ **Web UI Engine** | Streamlit (injected with custom glassmorphic CSS overrides) |
+| 🖥️ **Web UI** | Streamlit with custom glassmorphic CSS |
 
 ---
 
@@ -72,10 +99,10 @@ Your PDF / YouTube Video
 
 ### Prerequisites
 - Python 3.11+
-- [Ollama](https://ollama.com) installed and running
-- ~5 GB disk space for local models (e.g. `llama3` or `mistral`)
+- [Ollama](https://ollama.com) installed and running locally
+- ~5 GB disk space for the LLM model
 
-### Step-by-step
+### Installation
 
 **1. Clone the repository**
 ```bash
@@ -83,23 +110,23 @@ git clone https://github.com/Varn1t/PDF-RAG-Chatbot.git
 cd PDF-RAG-Chatbot
 ```
 
-**2. Install Python dependencies**
+**2. Install dependencies**
 ```bash
 pip install -r requirements.txt
 ```
 
-**3. Pull the local LLM model using Ollama**
+**3. Pull a local model**
 ```bash
 ollama pull llama3
 ```
 
-**4a. Launch the Premium Web App**
+**4a. Launch the web app**
 ```bash
 streamlit run app.py
 ```
-Open **http://localhost:8501** in your web browser.
+Open [http://localhost:8501](http://localhost:8501)
 
-**4b. Or run the CLI version in your terminal**
+**4b. Or run the CLI**
 ```bash
 python main.py
 ```
@@ -110,28 +137,43 @@ python main.py
 
 ```
 PDF-RAG-Chatbot/
-├── app.py              # Redesigned Premium Web Interface (PDF + YouTube + Parameters + Telemetry)
-├── main.py             # Standalone interactive CLI terminal script
-├── requirements.txt    # Required project Python dependencies
+├── agent.py          # LangGraph agent — state, nodes, edges, dual grader, pipeline builder
+├── app.py            # Streamlit web UI with telemetry and parameter controls
+├── main.py           # CLI interface with iteration diagnostics
+├── requirements.txt  # Python dependencies
 ├── .gitignore
-└── README.md           # Project documentation
+└── README.md
 ```
 
 ---
 
-## ⚙️ How It Works (Web Application UI)
+## 📦 Key Dependencies
 
-1. **Upload & Ingestion**: Select your source type (**PDF Upload** or **YouTube Video**) in the sidebar menu.
-2. **Dynamic Splitting**: Customize chunk sizes (fully configurable from 200 to 2,000 characters) and overlap thresholds (from 0 to 300 characters) in the configuration panel rather than relying on hardcoded defaults.
-3. **Local Vectorization**: Chunks are embedded locally via `all-MiniLM-L6-v2` and placed inside a local memory-resident FAISS vector database.
-4. **Context Telemetry**: A dashboard updates dynamically to show you character lengths, chunk statistics, and active pipeline statuses.
-5. **Grounded Question Answering**: When you chat, the engine retrieves the top $k$ most relevant context segments (configurable from 1 to 5 retrieved chunks) and feeds them into the local model, ensuring grounded answers without hallucinations.
+```
+langchain
+langchain-community
+langchain-huggingface
+langchain-ollama
+langgraph
+faiss-cpu
+streamlit
+youtube-transcript-api
+pypdf
+sentence-transformers
+```
 
+---
+
+## ⚠️ Known Limitations
+
+- **LLM-as-judge** — Implemented dual-graded self-correction; identified that local 8B models have reliability ceiling as LLM-as-judge — production deployment would require a stronger model or dedicated NLI scorer.
+- **Single document per session** — the current implementation indexes one source at a time. Multi-document support is a planned upgrade.
+- **Local model quality** — grounding and relevance accuracy are directly tied to the capability of the Ollama model you pull. `llama3` is recommended as the minimum.
 
 ---
 
 <div align="center">
 
-Made by Varnit using LangChain, FAISS, Ollama, Streamlit, and youtube-transcript-api.
+Built by [Varnit](https://github.com/Varn1t) · LangGraph · FAISS · Ollama · Streamlit
 
 </div>
