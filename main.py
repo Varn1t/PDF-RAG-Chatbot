@@ -22,7 +22,7 @@ def load_pdf(path_or_url):
     return loader.load()
 
 def main():
-    print("Welcome to the CLI RAG Chatbot!")
+    print("Welcome to the ContextFlow CLI!")
     print("1. Load a PDF (URL or local path)")
     print("2. Load a YouTube Video URL")
     
@@ -66,14 +66,14 @@ def main():
     print(f"Created and indexed {num_chunks} chunks.")
 
     # Ask a question
-    print("\nRAG is ready! Ask anything about the document. Type 'exit' to quit \n")
+    print("\nContextFlow is ready! Ask anything about the document. Type 'exit' to quit \n")
     chat_history = []
     while True: 
         query = input("You: ").strip()
         if not query:
             continue
         if query.lower() == 'exit':
-            print("Thanks for using the RAG model!")
+            print("Thanks for using ContextFlow!")
             break
         else:
             print("\nBot is thinking (Self-Correcting loop running)...")
