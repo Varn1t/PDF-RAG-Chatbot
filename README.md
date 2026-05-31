@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/loreloop_banner.png" alt="LoreLoop Header Banner" width="100%" />
-
 # 🌀 LoreLoop
 
 **Chat with any PDF or YouTube video — 100% locally, with a self-correcting agentic loop, dual-graded answer verification, conversational memory, and zero API costs.**
