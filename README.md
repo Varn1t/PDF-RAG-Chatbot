@@ -77,21 +77,14 @@ The CLI version provides detailed terminal output highlighting the query rephras
 
 ```mermaid
 graph TD
-    %% Define Styles
-    classDef startEnd fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff;
-    classDef nodeStyle fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#e2e8f0;
-    classDef checkStyle fill:#1e293b,stroke:#a855f7,stroke-width:2px,color:#fff;
-    classDef successStyle fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#fff;
-    classDef failureStyle fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#fff;
-
-    Start([User Question]) :::startEnd
-    Contextualize[contextualize_query<br>Rephrase using chat history] :::nodeStyle
-    Retrieve[retrieve<br>Get top-K chunks from FAISS] :::nodeStyle
-    Generate[generate<br>Answer using context] :::nodeStyle
-    Check{check_hallucination<br>Grounded & Relevant?} :::checkStyle
-    Rewrite[rewrite_query<br>Targeted rewrite using failure reason] :::nodeStyle
-    Success([Return Answer ✅]) :::successStyle
-    Failure([Information not found ❌]) :::failureStyle
+    Start([User Question])
+    Contextualize[contextualize_query<br>Rephrase using chat history]
+    Retrieve[retrieve<br>Get top-K chunks from FAISS]
+    Generate[generate<br>Answer using context]
+    Check{check_hallucination<br>Grounded & Relevant?}
+    Rewrite[rewrite_query<br>Targeted rewrite using failure reason]
+    Success([Return Answer ✅])
+    Failure([Information not found ❌])
 
     Start --> Contextualize
     Contextualize --> Retrieve
@@ -102,6 +95,19 @@ graph TD
     Check -- "Either Fails & Iterations < N" --> Rewrite
     Rewrite --> Retrieve
     Check -- "Either Fails & Iterations == N" --> Failure
+
+    %% Apply Styles
+    classDef startEnd fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff;
+    classDef nodeStyle fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#e2e8f0;
+    classDef checkStyle fill:#1e293b,stroke:#a855f7,stroke-width:2px,color:#fff;
+    classDef successStyle fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#fff;
+    classDef failureStyle fill:#7f1d1d,stroke:#f87171,stroke-width:2px,color:#fff;
+
+    class Start startEnd;
+    class Contextualize,Retrieve,Generate,Rewrite nodeStyle;
+    class Check checkStyle;
+    class Success successStyle;
+    class Failure failureStyle;
 ```
 
 **Two distinct query rewriting steps exist for two different reasons:**
